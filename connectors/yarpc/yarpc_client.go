@@ -238,7 +238,7 @@ func (y *Client) DropScope(ctx context.Context, scope string) error {
 
 func init() {
 	// TODO: Actually create one of these connectors
-	dosa.RegisterConnector("yarpc", func() (dosa.Connector, error) {
+	dosa.RegisterConnector("yarpc", func(_ map[string]string) (dosa.Connector, error) {
 		c := new(Client)
 		c.Client = dosaclient.New(nil)
 		return c, nil

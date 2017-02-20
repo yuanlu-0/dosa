@@ -60,6 +60,10 @@ type Condition struct {
 // These strings are returned when the entity is registered at startup
 type SchemaReference string
 
+func (sr *SchemaReference) String() string {
+	return string(*sr)
+}
+
 // FieldValue holds a field value. It's just a marker.
 type FieldValue interface{}
 
@@ -111,7 +115,7 @@ type Connector interface {
 }
 
 // CreationFuncType is the type of a creation function that creates an instance of a registered connector
-type CreationFuncType func() (Connector, error)
+type CreationFuncType func(map[string]string) (Connector, error)
 
 var registeredConnectors map[string]CreationFuncType
 
@@ -121,6 +125,6 @@ func init() {
 }
 
 // RegisterConnector registers a connector given a name
-func RegisterConnector(name string, creationFunc func() (Connector, error)) {
+func RegisterConnector(name string, creationFunc func(map[string]string) (Connector, error)) {
 	registeredConnectors[name] = creationFunc
 }
