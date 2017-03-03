@@ -22,6 +22,7 @@ import:
 - package: github.com/jessevdk/go-flags
 - package: github.com/yarpc/yarpc-go
   version: ^1.7.1
+- package: github.com/gocql/gocql
 testImport:
 - package: golang.org/x/tools
   subpackages:

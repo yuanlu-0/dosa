@@ -3,10 +3,20 @@ updated: 2017-03-29T22:14:01.685788392-07:00
 imports:
 - name: github.com/elodina/go-avro
   version: 0c8185d9a3ba82aeac98db3313a268a5b6df99b5
+- name: github.com/gocql/gocql
+  version: 1f874493e9e5aebe46b312593cbd9cb5d3946eda
+  subpackages:
+  - internal/lru
+  - internal/murmur
+  - internal/streams
 - name: github.com/golang/mock
   version: bd3c8e81be01eef76d4b503f5e687d2d1354d2d9
   subpackages:
   - gomock
+- name: github.com/golang/snappy
+  version: 553a641470496b2327abcac10b36396bd98e45c9
+- name: github.com/hailocab/go-hostpool
+  version: e80d13ce29ede4452c43dea11e79b9bc8a15b478
 - name: github.com/jessevdk/go-flags
   version: 460c7bb0abd6e927f2767cadc91aa6ef776a98b4
 - name: github.com/opentracing/opentracing-go
