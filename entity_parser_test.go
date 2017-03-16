@@ -66,8 +66,9 @@ func TestSinglePrimaryKey(t *testing.T) {
 }
 
 func BenchmarkSingleKey(b *testing.B) {
+	spk := (*SinglePrimaryKey)(nil)
 	for i := 0; i < b.N; i++ {
-		TableFromInstance(&SinglePrimaryKey{})
+		TableFromInstance(spk)
 	}
 }
 
@@ -207,6 +208,13 @@ type AllTypes struct {
 	BlobType   []byte
 	TimeType   time.Time
 	UUIDType   UUID
+}
+
+func BenchmarkAllTypes(b *testing.B) {
+	ati := (*AllTypes)(nil)
+	for i := 0; i < b.N; i++ {
+		TableFromInstance(ati)
+	}
 }
 
 func TestAllTypes(t *testing.T) {

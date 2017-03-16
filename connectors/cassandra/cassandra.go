@@ -21,47 +21,31 @@
 package cassandra
 
 import (
-	"context"
-	"github.com/uber-go/dosa"
-	"github.com/gocql/gocql"
-	"strings"
-	"fmt"
 	"bytes"
+	"context"
+	"fmt"
+	"github.com/gocql/gocql"
+	"github.com/uber-go/dosa"
 	"reflect"
+	"strings"
+	"io"
+	"encoding/base64"
 )
 
 type Connector struct {
-	Cluster *gocql.ClusterConfig
-	Session *gocql.Session
+	Cluster  *gocql.ClusterConfig
+	Session  *gocql.Session
 	keyspace string
 }
 
 func (c *Connector) CreateIfNotExists(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue) error {
-	panic("not implemented")
+	return c.upsertInternal(ctx, ei, values, true)
 }
 
 func (c *Connector) Read(ctx context.Context, ei *dosa.EntityInfo, keys map[string]dosa.FieldValue, fieldsToRead []string) (values map[string]dosa.FieldValue, err error) {
 	var stmt bytes.Buffer
 	stmt.WriteString("select ")
-	var queryResults = make([]interface{}, len(fieldsToRead))
-	for inx, field := range fieldsToRead {
-
-		if inx > 0 {
-			stmt.WriteByte(',')
-		}
-		fmt.Fprintf(&stmt, `"%s"`, field)
-		coldef := ei.Def.FindColumnDefinition(field)
-		switch coldef.Type {
-		case dosa.Bool:
-			queryResults[inx] = reflect.New(reflect.TypeOf(false)).Interface()
-		case dosa.Int32:
-			queryResults[inx] = reflect.New(reflect.TypeOf(int32(0))).Interface()
-		case dosa.Int64:
-			queryResults[inx] = reflect.New(reflect.TypeOf(int64(0))).Interface()
-		default:
-			panic(fmt.Sprintf("FIXME not implemented %v",coldef.Type)) // FIXME
-		}
-	}
+	queryResults := makeQueryResults(&stmt, ei, fieldsToRead)
 	fmt.Fprintf(&stmt, ` from "%s" where `, ei.Def.Name)
 	var bound []interface{}
 	needAnd := false
@@ -90,8 +74,16 @@ func (c *Connector) MultiRead(ctx context.Context, ei *dosa.EntityInfo, keys []m
 }
 
 func (c *Connector) Upsert(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue) error {
+	return c.upsertInternal(ctx, ei, values, false)
+}
+func (c *Connector) upsertInternal(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue, dolwt bool) error {
 	var stmt bytes.Buffer
 	var bound []interface{}
+
+	if len(values) == 0 {
+		// no values specified is a no-op
+		return nil
+	}
 
 	for name, value := range values {
 		if stmt.Len() == 0 {
@@ -100,6 +92,9 @@ func (c *Connector) Upsert(ctx context.Context, ei *dosa.EntityInfo, values map[
 			stmt.WriteByte(',')
 		}
 		fmt.Fprintf(&stmt, `"%s"`, name)
+		if uuid, ok := value.(dosa.UUID); ok {
+			value = string(uuid)
+		}
 		bound = append(bound, value)
 	}
 	stmt.WriteString(") values (")
@@ -111,9 +106,12 @@ func (c *Connector) Upsert(ctx context.Context, ei *dosa.EntityInfo, values map[
 	}
 	stmt.WriteByte(')')
 
+	if dolwt {
+		stmt.WriteString(" IF NOT EXISTS")
+	}
+
 	err := c.Session.Query(stmt.String(), bound...).WithContext(ctx).Exec()
 	return err
-
 }
 
 func (c *Connector) MultiUpsert(ctx context.Context, ei *dosa.EntityInfo, multiValues []map[string]dosa.FieldValue) (result []error, err error) {
@@ -121,16 +119,95 @@ func (c *Connector) MultiUpsert(ctx context.Context, ei *dosa.EntityInfo, multiV
 }
 
 func (c *Connector) Remove(ctx context.Context, ei *dosa.EntityInfo, keys map[string]dosa.FieldValue) error {
-	panic("not implemented")
+	var stmt bytes.Buffer
+	var bound []interface{}
+
+	for name, value := range keys {
+		if stmt.Len() == 0 {
+			fmt.Fprintf(&stmt, "delete from %s where ", ei.Def.Name)
+		} else {
+			stmt.WriteString(" AND ")
+		}
+		fmt.Fprintf(&stmt, `"%s"=?`, name)
+		if uuid, ok := value.(dosa.UUID); ok {
+			value = string(uuid)
+		}
+		bound = append(bound, value)
+	}
+
+	err := c.Session.Query(stmt.String(), bound...).WithContext(ctx).Exec()
+	return err
 }
 
 func (c *Connector) MultiRemove(ctx context.Context, ei *dosa.EntityInfo, multiKeys []map[string]dosa.FieldValue) (result []error, err error) {
 	panic("not implemented")
 }
+func makeQueryResults(stmt io.Writer, ei *dosa.EntityInfo, fieldsToRead []string) []interface{} {
+	var queryResults = make([]interface{}, len(fieldsToRead))
+	for inx, field := range fieldsToRead {
 
-func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnConditions map[string][]dosa.Condition, fieldsToRead []string, token string, limit int) ([]map[string]dosa.FieldValue, string, error) {
-	panic("not implemented")
+		if inx > 0 {
+			stmt.Write([]byte{','})
+		}
+		fmt.Fprintf(stmt, `"%s"`, field)
+		coldef := ei.Def.FindColumnDefinition(field)
+		switch coldef.Type {
+		case dosa.Bool:
+			queryResults[inx] = reflect.New(reflect.TypeOf(false)).Interface()
+		case dosa.Int32:
+			queryResults[inx] = reflect.New(reflect.TypeOf(int32(0))).Interface()
+		case dosa.Int64:
+			queryResults[inx] = reflect.New(reflect.TypeOf(int64(0))).Interface()
+		default:
+			panic(fmt.Sprintf("FIXME not implemented %v", coldef.Type)) // FIXME
+		}
+	}
+	return queryResults
 }
+
+func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnConditions map[string][]*dosa.Condition, fieldsToRead []string, token string, limit int) ([]map[string]dosa.FieldValue, string, error) {
+	var stmt bytes.Buffer
+	stmt.WriteString("select ")
+	queryResults := makeQueryResults(&stmt, ei, fieldsToRead)
+
+	fmt.Fprintf(&stmt, ` from "%s" where `, ei.Def.Name)
+	var bound []interface{}
+	needAnd := false
+	keys := ei.Def.KeySet()
+	for field, value := range keys {
+		if needAnd {
+			stmt.WriteString(" and ")
+		}
+		needAnd = true
+		fmt.Fprintf(&stmt, `"%s" = ?`, field)
+		bound = append(bound, value)
+	}
+
+	q := c.Session.Query(stmt.String(), bound...).WithContext(ctx).PageSize(limit)
+	if token != "" {
+		data, err := base64.StdEncoding.DecodeString(token)
+		if err != nil {
+			return nil, "", err
+		}
+		q = q.PageState(data)
+	}
+	iter := q.Iter()
+	err := iter.Scan(queryResults...)
+	if err != nil {
+		return nil, "", err
+	}
+	values := map[string]dosa.FieldValue{}
+	for inx, field := range fieldsToRead {
+		values[field] = dosa.FieldValue(reflect.ValueOf(queryResults[inx]).Elem().Interface())
+	}
+
+	nextToken := base64.StdEncoding.EncodeToString(iter.PageState())
+
+	return values, nextToken, err
+	// func (iter *Iter) PageState() []byte
+	// func (q *Query) PageState(state []byte) *Query
+}
+
 
 func (c *Connector) Search(ctx context.Context, ei *dosa.EntityInfo, fieldPairs dosa.FieldNameValuePair, fieldsToRead []string, token string, limit int) (multiValues []map[string]dosa.FieldValue, nextToken string, err error) {
 	panic("not implemented")
@@ -151,14 +228,16 @@ func (c *Connector) TruncateScope(ctx context.Context, scope string) error {
 func (c *Connector) DropScope(ctx context.Context, scope string) error {
 	panic("not implemented")
 }
+
 type RepairableSchemaMismatchError struct {
 	MissingColumns []MissingColumn
-	MissingTables []string
+	MissingTables  []string
 }
 type MissingColumn struct {
-	Column dosa.ColumnDefinition
+	Column    dosa.ColumnDefinition
 	Tablename string
 }
+
 func (m *RepairableSchemaMismatchError) HasMissing() bool {
 	return m.MissingColumns != nil || m.MissingTables != nil
 }
@@ -174,7 +253,7 @@ func (m *RepairableSchemaMismatchError) Error() string {
 func compareStructToSchema(ed *dosa.EntityDefinition, md *gocql.TableMetadata, schemaErrors *RepairableSchemaMismatchError) error {
 	// Check partition keys
 	if len(ed.Key.PartitionKeys) != len(md.PartitionKey) {
-		return fmt.Errorf("Table %q primary key length mismatch (was %d should be %d)", ed.Name, len(md.PartitionKey), len(ed.Key.PartitionKeys) )
+		return fmt.Errorf("Table %q primary key length mismatch (was %d should be %d)", ed.Name, len(md.PartitionKey), len(ed.Key.PartitionKeys))
 	}
 	for i, pk := range ed.Key.PartitionKeys {
 		if md.PartitionKey[i].Name != pk {
@@ -188,7 +267,7 @@ func compareStructToSchema(ed *dosa.EntityDefinition, md *gocql.TableMetadata, s
 	}
 	for i, ck := range ed.Key.ClusteringKeys {
 		if md.ClusteringColumns[i].Name != ck.Name {
-			return fmt.Errorf("Table %q clustering key mismatch (column %d should be %q)", ed.Name, i + 1, ck.Name)
+			return fmt.Errorf("Table %q clustering key mismatch (column %d should be %q)", ed.Name, i+1, ck.Name)
 		}
 	}
 
@@ -200,7 +279,6 @@ func compareStructToSchema(ed *dosa.EntityDefinition, md *gocql.TableMetadata, s
 		}
 		// TODO: check column type
 	}
-
 
 	return nil
 
@@ -245,8 +323,8 @@ func (c *Connector) UpsertSchema(ctx context.Context, scope string, namePrefix s
 
 const (
 	defaultContactPoints = "127.0.0.1"
-	defaultKeyspace = "test"
-	defaultConsistency = gocql.LocalQuorum
+	defaultKeyspace      = "test"
+	defaultConsistency   = gocql.LocalQuorum
 )
 
 func init() {
@@ -282,4 +360,3 @@ func (c *Connector) ScopeExists(ctx context.Context, scope string) (bool, error)
 func (c *Connector) Shutdown() error {
 	panic("not implemented")
 }
-

@@ -24,9 +24,8 @@ import (
 	"testing"
 	"github.com/uber-go/dosa"
 	"time"
-	"github.com/stretchr/testify/assert"
 	"golang.org/x/net/context"
-	"fmt"
+	_ "github.com/uber-go/dosa/connectors/random"
 )
 type AllTypes struct {
 	dosa.Entity     `dosa:"primaryKey=BoolType"`
@@ -41,16 +40,41 @@ type AllTypes struct {
 }
 
 
-func TestIntegration(t *testing.T) {
+func BenchmarkIntegration(b *testing.B) {
 	reg, err := dosa.NewRegistrar("production", "rkuris", (*AllTypes)(nil))
-	assert.Nil(t, err)
+	if err != nil {
+		panic(err)
+	}
 	conn, err := dosa.GetConnector("cassandra", map[string]interface{}{})
+	if err != nil {
+		panic(err)
+	}
 	rconn, err := dosa.GetConnector("random", map[string]interface{}{})
-	c, err := dosa.NewClient(reg, conn)
-	err = c.Initialize(context.TODO())
-	fmt.Printf("First error is %v\n", err)
-	v := AllTypes{BoolType: false}
-	err = c.Read(context.TODO(), []string{"BoolType", "Int32Type"}, &v)
-	fmt.Printf("error is %v\n", err)
-	fmt.Printf("entity now has %v\n", v)
+	if err != nil {
+		panic(err)
+	}
+
+	cassandraClient, err := dosa.NewClient(reg, conn)
+
+	randomClient, err := dosa.NewClient(reg, rconn)
+
+	b.ResetTimer()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	err = cassandraClient.Initialize(ctx)
+
+	if err != nil {
+		panic(err)
+	}
+
+	randomClient.Initialize(ctx)
+	t := &AllTypes{}
+	for i := 0; i < b.N; i++ {
+		if err := randomClient.Read(ctx, dosa.All(), t); err != nil {
+			panic(err)
+		}
+		if err := cassandraClient.Upsert(ctx, dosa.All(), t); err != nil {
+			panic(err)
+		}
+	}
 }

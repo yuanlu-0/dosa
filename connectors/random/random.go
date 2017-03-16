@@ -84,7 +84,7 @@ func Data(ei *dosa.EntityInfo, fieldsToRead []string) map[string]dosa.FieldValue
 		case dosa.Timestamp:
 			v = dosa.FieldValue(time.Unix(0, rand.Int63()/2))
 		case dosa.TUUID:
-			v = dosa.FieldValue(uuid.New())
+			v = dosa.FieldValue(dosa.UUID(uuid.New()))
 		default:
 			panic("invalid type " + cd.Type.String())
 
@@ -97,6 +97,11 @@ func Data(ei *dosa.EntityInfo, fieldsToRead []string) map[string]dosa.FieldValue
 // Read always returns random data of the type specified
 func (c *Connector) Read(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue, fieldsToRead []string) (map[string]dosa.FieldValue, error) {
 
+	if fieldsToRead == nil {
+		for _, coldef := range ei.Def.Columns {
+			fieldsToRead = append(fieldsToRead, coldef.Name)
+		}
+	}
 	return Data(ei, fieldsToRead), nil
 }
 
@@ -200,4 +205,11 @@ func (c *Connector) ScopeExists(ctx context.Context, scope string) (bool, error)
 // Shutdown always returns nil
 func (c *Connector) Shutdown() error {
 	return nil
+}
+
+func init() {
+	dosa.RegisterConnector("random", func(map[string]interface{}) (dosa.Connector, error) {
+		c := new(Connector)
+		return c, nil
+	})
 }
