@@ -159,6 +159,7 @@ type AdminClient interface {
 
 type client struct {
 	initialized bool
+	autocreate  bool
 	registrar   Registrar
 	connector   Connector
 }
@@ -168,8 +169,17 @@ type client struct {
 // basic CRUD functionality.
 func NewClient(reg Registrar, conn Connector) Client {
 	return &client{
-		registrar: reg,
-		connector: conn,
+		registrar:  reg,
+		connector:  conn,
+		autocreate: false,
+	}
+}
+
+func NewAutoCreateClient(reg Registrar, conn Connector) Client {
+	return &client{
+		registrar:  reg,
+		connector:  conn,
+		autocreate: true,
 	}
 }
 
@@ -190,9 +200,17 @@ func (c *client) Initialize(ctx context.Context) error {
 	}
 
 	// fetch latest version for all registered entities, assume order is preserved
-	version, err := c.connector.CheckSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)
+
+	var version int32
+	if c.autocreate {
+		version, err = c.connector.UpsertSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)
+
+	} else {
+		version, err = c.connector.CheckSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)
+	}
+
 	if err != nil {
-		return errors.Wrap(err, "CheckSchema failed")
+		return errors.Wrap(err, "schema operation failed")
 	}
 
 	// set version for all registered entities

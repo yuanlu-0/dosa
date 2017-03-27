@@ -23,13 +23,13 @@ package cassandra
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"github.com/gocql/gocql"
 	"github.com/uber-go/dosa"
+	"io"
 	"reflect"
 	"strings"
-	"io"
-	"encoding/base64"
 )
 
 type Connector struct {
@@ -43,6 +43,12 @@ func (c *Connector) CreateIfNotExists(ctx context.Context, ei *dosa.EntityInfo, 
 }
 
 func (c *Connector) Read(ctx context.Context, ei *dosa.EntityInfo, keys map[string]dosa.FieldValue, fieldsToRead []string) (values map[string]dosa.FieldValue, err error) {
+	b := NewSelectBuilder(ei.Def)
+	b.Project(fieldsToRead)
+	b.WhereEquals(keys)
+
+
+
 	var stmt bytes.Buffer
 	stmt.WriteString("select ")
 	queryResults := makeQueryResults(&stmt, ei, fieldsToRead)
@@ -173,14 +179,29 @@ func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnCondit
 	fmt.Fprintf(&stmt, ` from "%s" where `, ei.Def.Name)
 	var bound []interface{}
 	needAnd := false
-	keys := ei.Def.KeySet()
-	for field, value := range keys {
+	for field, conds := range columnConditions {
 		if needAnd {
 			stmt.WriteString(" and ")
 		}
 		needAnd = true
-		fmt.Fprintf(&stmt, `"%s" = ?`, field)
-		bound = append(bound, value)
+		for _, cond := range conds {
+			fmt.Fprintf(&stmt, `"%s"`, field)
+			switch cond.Op {
+			case dosa.Eq:
+				fmt.Fprintf(&stmt, "=?")
+			case dosa.Gt:
+				fmt.Fprintf(&stmt, ">?")
+			case dosa.Lt:
+				fmt.Fprintf(&stmt, "<?")
+			case dosa.LtOrEq:
+				fmt.Fprintf(&stmt, "<=?")
+			case dosa.GtOrEq:
+				fmt.Fprintf(&stmt, ">=?")
+			default:
+				panic("Invalid operator")
+			}
+			bound = append(bound, cond.Value)
+		}
 	}
 
 	q := c.Session.Query(stmt.String(), bound...).WithContext(ctx).PageSize(limit)
@@ -207,7 +228,6 @@ func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnCondit
 	// func (iter *Iter) PageState() []byte
 	// func (q *Query) PageState(state []byte) *Query
 }
-
 
 func (c *Connector) Search(ctx context.Context, ei *dosa.EntityInfo, fieldPairs dosa.FieldNameValuePair, fieldsToRead []string, token string, limit int) (multiValues []map[string]dosa.FieldValue, nextToken string, err error) {
 	panic("not implemented")

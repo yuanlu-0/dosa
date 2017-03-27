@@ -55,7 +55,7 @@ func RawValueAsInterface(val dosarpc.RawValue, typ dosa.Type) interface{} {
 // RawValueFromInterface takes an interface, introspects the type, and then
 // returns a RawValue object that represents this. It panics if the type
 // is not in the list, which should be a dosa bug
-func RawValueFromInterface(i interface{}) *dosarpc.RawValue {
+func RawValueFromInterface(i interface{}) (*dosarpc.RawValue, error) {
 	// TODO: Do we do type compatibility checks here? We should know the schema,
 	// but the callers are all well known and should match the types
 	switch v := i.(type) {
