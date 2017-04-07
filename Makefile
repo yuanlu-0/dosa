@@ -102,3 +102,11 @@ else ifeq ($(target), Linux)
 	$(ECHO_V)GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o ./out/cli/linux/dosa ./cmd/dosa
 endif
 endif
+
+.PHONY: jenkins
+jenkins:
+	rm -rf dosa
+	mkdir -p .tmp/.goroot/src/$(dir $(PROJECT_ROOT))
+	ln -s $(CURDIR) $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
+	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
+	$(MAKE)
