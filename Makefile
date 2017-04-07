@@ -108,8 +108,6 @@ jenkins:
 	rm -rf dosa
 	mkdir -p .tmp/.goroot/src/$(dir $(PROJECT_ROOT))
 	ln -s $(CURDIR) $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
-	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
-	glide --version
-	GOPATH=$(CURDIR)/.tmp/.goroot glide i
-	GOPATH=$(CURDIR)/.tmp/.goroot make -C $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT) cli target=$(shell uname)
+	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)  && GOPATH=$(CURDIR)/.tmp/.goroot glide i
+	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT) && GOPATH=$(CURDIR)/.tmp/.goroot make cli target=$(shell uname)
 
