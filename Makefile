@@ -111,5 +111,5 @@ jenkins:
 	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
 	glide --version
 	GOPATH=$(CURDIR)/.tmp/.goroot glide i
-	GOPATH=$(CURDIR)/.tmp/.goroot make cli target=$(shell uname)
+	GOPATH=$(CURDIR)/.tmp/.goroot make -C $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT) cli target=$(shell uname)
 
