@@ -109,5 +109,6 @@ jenkins:
 	mkdir -p .tmp/.goroot/src/$(dir $(PROJECT_ROOT))
 	ln -s $(CURDIR) $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
 	cd  $(CURDIR)/.tmp/.goroot/src/$(PROJECT_ROOT)
-	GOPATH=$(CURDIR)/.tmp/.goroot make
+	GOPATH=$(CURDIR)/.tmp/.goroot glide i
+	GOPATH=$(CURDIR)/.tmp/.goroot make V=1
 
