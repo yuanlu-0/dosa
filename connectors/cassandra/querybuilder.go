@@ -21,10 +21,12 @@
 package cassandra
 
 import (
-	"fmt"
 	"bytes"
-	"github.com/uber-go/dosa"
+	"fmt"
 	"reflect"
+	"time"
+
+	"github.com/uber-go/dosa"
 )
 
 type state int
@@ -34,13 +36,14 @@ const (
 	stateProjected
 	stateWhereClause
 )
+
 // QueryBuilder holds the information while building a query
 type QueryBuilder struct {
 	Statement        bytes.Buffer
 	BoundVariables   []interface{}
 	ProjectedResults []interface{}
 	EntityDefinition *dosa.EntityDefinition
-	qbstate state
+	qbstate          state
 }
 
 // NewSelectBuilder starts building a new select statement
@@ -70,7 +73,7 @@ func (qb *QueryBuilder) Project(cols []string) {
 		if inx > 0 {
 			qb.Statement.Write([]byte{','})
 		}
-		fmt.Fprintf(qb.Statement, `"%s"`, field)
+		fmt.Fprintf(&qb.Statement, `"%s"`, field)
 		coldef := qb.EntityDefinition.FindColumnDefinition(field)
 		switch coldef.Type {
 		case dosa.Bool:
@@ -79,13 +82,22 @@ func (qb *QueryBuilder) Project(cols []string) {
 			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf(int32(0))).Interface()
 		case dosa.Int64:
 			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf(int64(0))).Interface()
+		case dosa.Blob:
+			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf([]byte{})).Interface()
+		case dosa.Double:
+			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf(float64(0.0))).Interface()
+		case dosa.TUUID, dosa.String:
+			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf("")).Interface()
+		case dosa.Timestamp:
+			qb.ProjectedResults[inx] = reflect.New(reflect.TypeOf(time.Time{})).Interface()
 		default:
-			panic(fmt.Sprintf("FIXME not implemented %v", coldef.Type)) // FIXME
+			panic(fmt.Sprintf("Invalid type %v", coldef.Type))
 		}
 	}
 	qb.qbstate = stateProjected
 }
 
+// WhereEquals adds a where clause on an equal value for a set of columns
 func (qb *QueryBuilder) WhereEquals(cols map[string]dosa.FieldValue) {
 	switch qb.qbstate {
 	case stateProjected:
@@ -99,6 +111,7 @@ func (qb *QueryBuilder) WhereEquals(cols map[string]dosa.FieldValue) {
 	}
 }
 
+// GetStatement returns the statement in string format
 func (qb *QueryBuilder) GetStatement() string {
 	if qb.qbstate != stateWhereClause {
 		panic("invalid state for GetStatement")
@@ -106,6 +119,7 @@ func (qb *QueryBuilder) GetStatement() string {
 	return qb.Statement.String()
 }
 
+// GetBoundVariables returns the bound variable list
 func (qb *QueryBuilder) GetBoundVariables() []interface{} {
 	return qb.BoundVariables
 }

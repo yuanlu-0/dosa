@@ -23,12 +23,13 @@ package testentity_test
 import (
 	"context"
 	"fmt"
+	"testing"
+	"time"
+
 	"github.com/uber-go/dosa"
 	_ "github.com/uber-go/dosa/connectors/random"
 	_ "github.com/uber-go/dosa/connectors/yarpc"
 	"github.com/uber-go/dosa/testentity"
-	"testing"
-	"time"
 
 	"go.uber.org/ratelimit"
 )

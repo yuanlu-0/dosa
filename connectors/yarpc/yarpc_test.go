@@ -68,7 +68,6 @@ var testEi = &dosa.EntityInfo{
 			{Name: "c4", Type: dosa.Blob},
 			{Name: "c5", Type: dosa.Bool},
 			{Name: "c6", Type: dosa.Int32},
-			{Name: "c7", Type: dosa.TUUID},
 		},
 		Key: &dosa.PrimaryKey{
 			PartitionKeys: []string{"f1"},
@@ -208,7 +207,6 @@ func TestYaRPCClient_Read(t *testing.T) {
 		"c4":               {ElemValue: &drpc.RawValue{BinaryValue: []byte{'b', 'i', 'n', 'a', 'r', 'y'}}},
 		"c5":               {ElemValue: &drpc.RawValue{BoolValue: testBoolPtr(false)}},
 		"c6":               {ElemValue: &drpc.RawValue{Int32Value: testInt32Ptr(1)}},
-		"c7":		    {ElemValue: &drpc.RawValue{StringValue: testStringPtr("invalid-uuid")}},
 	}}, nil)
 
 	// Prepare the dosa client interface using the mocked RPC layer
@@ -224,7 +222,6 @@ func TestYaRPCClient_Read(t *testing.T) {
 	assert.Equal(t, []byte{'b', 'i', 'n', 'a', 'r', 'y'}, values["c4"])
 	assert.Equal(t, false, values["c5"])
 	assert.Equal(t, int32(1), values["c6"])
-	assert.Equal(t, dosa.UUID("invalid-uuid"), values["c7"])
 	assert.Empty(t, values["fieldNotInSchema"]) // the unknown field is not present
 
 	errCode := int32(404)

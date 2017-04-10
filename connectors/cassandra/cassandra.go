@@ -25,29 +25,33 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
-	"github.com/gocql/gocql"
-	"github.com/uber-go/dosa"
 	"io"
 	"reflect"
 	"strings"
+
+	"time"
+
+	"github.com/gocql/gocql"
+	"github.com/uber-go/dosa"
 )
 
+// Connector holds the connection information for this cassandra connector
 type Connector struct {
 	Cluster  *gocql.ClusterConfig
 	Session  *gocql.Session
 	keyspace string
 }
 
+// CreateIfNotExists implements the interface for gocql
 func (c *Connector) CreateIfNotExists(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue) error {
 	return c.upsertInternal(ctx, ei, values, true)
 }
 
+// Read implements the interface for gocql
 func (c *Connector) Read(ctx context.Context, ei *dosa.EntityInfo, keys map[string]dosa.FieldValue, fieldsToRead []string) (values map[string]dosa.FieldValue, err error) {
 	b := NewSelectBuilder(ei.Def)
 	b.Project(fieldsToRead)
 	b.WhereEquals(keys)
-
-
 
 	var stmt bytes.Buffer
 	stmt.WriteString("select ")
@@ -75,13 +79,16 @@ func (c *Connector) Read(ctx context.Context, ei *dosa.EntityInfo, keys map[stri
 	return values, err
 }
 
+// MultiRead is not implemented
 func (c *Connector) MultiRead(ctx context.Context, ei *dosa.EntityInfo, keys []map[string]dosa.FieldValue, fieldsToRead []string) (results []*dosa.FieldValuesOrError, err error) {
 	panic("not implemented")
 }
 
+// Upsert implements the interface for gocql
 func (c *Connector) Upsert(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue) error {
 	return c.upsertInternal(ctx, ei, values, false)
 }
+
 func (c *Connector) upsertInternal(ctx context.Context, ei *dosa.EntityInfo, values map[string]dosa.FieldValue, dolwt bool) error {
 	var stmt bytes.Buffer
 	var bound []interface{}
@@ -120,10 +127,12 @@ func (c *Connector) upsertInternal(ctx context.Context, ei *dosa.EntityInfo, val
 	return err
 }
 
+// MultiUpsert is not implemented
 func (c *Connector) MultiUpsert(ctx context.Context, ei *dosa.EntityInfo, multiValues []map[string]dosa.FieldValue) (result []error, err error) {
 	panic("not implemented")
 }
 
+// Remove implements the interface for gocql
 func (c *Connector) Remove(ctx context.Context, ei *dosa.EntityInfo, keys map[string]dosa.FieldValue) error {
 	var stmt bytes.Buffer
 	var bound []interface{}
@@ -145,15 +154,16 @@ func (c *Connector) Remove(ctx context.Context, ei *dosa.EntityInfo, keys map[st
 	return err
 }
 
+// MultiRemove is not implemented
 func (c *Connector) MultiRemove(ctx context.Context, ei *dosa.EntityInfo, multiKeys []map[string]dosa.FieldValue) (result []error, err error) {
 	panic("not implemented")
 }
+
 func makeQueryResults(stmt io.Writer, ei *dosa.EntityInfo, fieldsToRead []string) []interface{} {
 	var queryResults = make([]interface{}, len(fieldsToRead))
 	for inx, field := range fieldsToRead {
-
 		if inx > 0 {
-			stmt.Write([]byte{','})
+			_, _ = stmt.Write([]byte{','})
 		}
 		fmt.Fprintf(stmt, `"%s"`, field)
 		coldef := ei.Def.FindColumnDefinition(field)
@@ -164,13 +174,22 @@ func makeQueryResults(stmt io.Writer, ei *dosa.EntityInfo, fieldsToRead []string
 			queryResults[inx] = reflect.New(reflect.TypeOf(int32(0))).Interface()
 		case dosa.Int64:
 			queryResults[inx] = reflect.New(reflect.TypeOf(int64(0))).Interface()
+		case dosa.Blob:
+			queryResults[inx] = reflect.New(reflect.TypeOf([]byte{})).Interface()
+		case dosa.Double:
+			queryResults[inx] = reflect.New(reflect.TypeOf(float64(0.0))).Interface()
+		case dosa.TUUID, dosa.String:
+			queryResults[inx] = reflect.New(reflect.TypeOf("")).Interface()
+		case dosa.Timestamp:
+			queryResults[inx] = reflect.New(reflect.TypeOf(time.Time{})).Interface()
 		default:
-			panic(fmt.Sprintf("FIXME not implemented %v", coldef.Type)) // FIXME
+			panic(fmt.Sprintf("invalid type %v", coldef.Type))
 		}
 	}
 	return queryResults
 }
 
+// Range implements the interface
 func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnConditions map[string][]*dosa.Condition, fieldsToRead []string, token string, limit int) ([]map[string]dosa.FieldValue, string, error) {
 	var stmt bytes.Buffer
 	stmt.WriteString("select ")
@@ -213,132 +232,42 @@ func (c *Connector) Range(ctx context.Context, ei *dosa.EntityInfo, columnCondit
 		q = q.PageState(data)
 	}
 	iter := q.Iter()
-	err := iter.Scan(queryResults...)
+	var rval []map[string]dosa.FieldValue
+	for iter.Scan(queryResults...) {
+		values := map[string]dosa.FieldValue{}
+		for inx, field := range fieldsToRead {
+			values[field] = dosa.FieldValue(reflect.ValueOf(queryResults[inx]).Elem().Interface())
+		}
+
+		limit = limit - 1
+		if limit <= 0 {
+			break
+		}
+
+		rval = append(rval, values)
+	}
+	var nextToken string
+	if limit == 0 {
+		nextToken = base64.StdEncoding.EncodeToString(iter.PageState())
+	}
+	err := iter.Close()
 	if err != nil {
 		return nil, "", err
 	}
-	values := map[string]dosa.FieldValue{}
-	for inx, field := range fieldsToRead {
-		values[field] = dosa.FieldValue(reflect.ValueOf(queryResults[inx]).Elem().Interface())
+	if len(rval) == 0 {
+		return nil, "", &dosa.ErrNotFound{}
 	}
-
-	nextToken := base64.StdEncoding.EncodeToString(iter.PageState())
-
-	return values, nextToken, err
-	// func (iter *Iter) PageState() []byte
-	// func (q *Query) PageState(state []byte) *Query
+	return rval, nextToken, nil
 }
 
+// Search is not implemented
 func (c *Connector) Search(ctx context.Context, ei *dosa.EntityInfo, fieldPairs dosa.FieldNameValuePair, fieldsToRead []string, token string, limit int) (multiValues []map[string]dosa.FieldValue, nextToken string, err error) {
 	panic("not implemented")
 }
 
+// Scan is not implemented
 func (c *Connector) Scan(ctx context.Context, ei *dosa.EntityInfo, fieldsToRead []string, token string, limit int) (multiValues []map[string]dosa.FieldValue, nextToken string, err error) {
 	panic("not implemented")
-}
-
-func (c *Connector) CreateScope(ctx context.Context, scope string) error {
-	panic("not implemented")
-}
-
-func (c *Connector) TruncateScope(ctx context.Context, scope string) error {
-	panic("not implemented")
-}
-
-func (c *Connector) DropScope(ctx context.Context, scope string) error {
-	panic("not implemented")
-}
-
-type RepairableSchemaMismatchError struct {
-	MissingColumns []MissingColumn
-	MissingTables  []string
-}
-type MissingColumn struct {
-	Column    dosa.ColumnDefinition
-	Tablename string
-}
-
-func (m *RepairableSchemaMismatchError) HasMissing() bool {
-	return m.MissingColumns != nil || m.MissingTables != nil
-}
-func (m *RepairableSchemaMismatchError) Error() string {
-	if m.MissingTables != nil {
-		return fmt.Sprintf("Missing %d tables (first is %q)", len(m.MissingTables), m.MissingTables[0])
-	}
-	return fmt.Sprintf("Missing %d columns (first is %q in table %q)", len(m.MissingColumns), m.MissingColumns[0].Column.Name, m.MissingColumns[0].Tablename)
-}
-
-// compareStructToSchema compares a dosa EntityDefinition to the gocql TableMetadata
-// There are two main cases, one that we can fix by adding some columns and all the other mismatches that we can't fix
-func compareStructToSchema(ed *dosa.EntityDefinition, md *gocql.TableMetadata, schemaErrors *RepairableSchemaMismatchError) error {
-	// Check partition keys
-	if len(ed.Key.PartitionKeys) != len(md.PartitionKey) {
-		return fmt.Errorf("Table %q primary key length mismatch (was %d should be %d)", ed.Name, len(md.PartitionKey), len(ed.Key.PartitionKeys))
-	}
-	for i, pk := range ed.Key.PartitionKeys {
-		if md.PartitionKey[i].Name != pk {
-			return fmt.Errorf("Table %q primary key mismatch (should be %q)", ed.Name, ed.Key.PartitionKeys)
-		}
-	}
-
-	// Check clustering keys
-	if len(ed.Key.ClusteringKeys) != len(md.ClusteringColumns) {
-		return fmt.Errorf("Table %q clustering key length mismatch (should be %q)", ed.Name, ed.Key.ClusteringKeys)
-	}
-	for i, ck := range ed.Key.ClusteringKeys {
-		if md.ClusteringColumns[i].Name != ck.Name {
-			return fmt.Errorf("Table %q clustering key mismatch (column %d should be %q)", ed.Name, i+1, ck.Name)
-		}
-	}
-
-	// Check each column
-	for _, col := range ed.Columns {
-		_, ok := md.Columns[col.Name]
-		if !ok {
-			schemaErrors.MissingColumns = append(schemaErrors.MissingColumns, MissingColumn{Column: *col, Tablename: ed.Name})
-		}
-		// TODO: check column type
-	}
-
-	return nil
-
-}
-
-// CheckSchema verifies that the schema passed in the registered entities matches the database
-func (c *Connector) CheckSchema(ctx context.Context, scope string, namePrefix string, ed []*dosa.EntityDefinition) (versions []int32, err error) {
-	schemaErrors := new(RepairableSchemaMismatchError)
-
-	// TODO: unfortunately, gocql doesn't have a way to pass the context to this operation :(
-	km, err := c.Session.KeyspaceMetadata(c.keyspace)
-	if err != nil {
-		return nil, err
-	}
-	refs := make([]int32, len(ed))
-	for num, ed := range ed {
-		tableMetadata, ok := km.Tables[ed.Name]
-		if !ok {
-			schemaErrors.MissingTables = append(schemaErrors.MissingTables, ed.Name)
-			continue
-		}
-		refs[num] = 1
-		if err := compareStructToSchema(ed, tableMetadata, schemaErrors); err != nil {
-			return nil, err
-		}
-
-	}
-	if schemaErrors.HasMissing() {
-		return nil, schemaErrors
-	}
-	return refs, nil
-}
-
-func (c *Connector) UpsertSchema(ctx context.Context, scope string, namePrefix string, ed []*dosa.EntityDefinition) (versions []int32, err error) {
-	sr, err := c.CheckSchema(ctx, scope, namePrefix, ed)
-	if _, ok := err.(*RepairableSchemaMismatchError); ok {
-		// TODO: this is recoverable by adding the columns/tables in the error message
-		return nil, err
-	}
-	return sr, err
 }
 
 const (
@@ -373,10 +302,8 @@ func init() {
 		return c, nil
 	})
 }
-func (c *Connector) ScopeExists(ctx context.Context, scope string) (bool, error) {
-	panic("not implemented")
-}
 
+// Shutdown is not implemented
 func (c *Connector) Shutdown() error {
 	panic("not implemented")
 }

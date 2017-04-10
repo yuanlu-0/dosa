@@ -175,6 +175,8 @@ func NewClient(reg Registrar, conn Connector) Client {
 	}
 }
 
+// NewAutoCreateClient creates a client with autocreate on
+// This will cause the schema to get updated or created on startup
 func NewAutoCreateClient(reg Registrar, conn Connector) Client {
 	return &client{
 		registrar:  reg,
@@ -203,7 +205,9 @@ func (c *client) Initialize(ctx context.Context) error {
 
 	var version int32
 	if c.autocreate {
-		version, err = c.connector.UpsertSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)
+		var schemaStatus *SchemaStatus
+		schemaStatus, err = c.connector.UpsertSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)
+		version = schemaStatus.Version
 
 	} else {
 		version, err = c.connector.CheckSchema(ctx, c.registrar.Scope(), c.registrar.NamePrefix(), eds)

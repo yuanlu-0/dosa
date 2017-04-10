@@ -22,23 +22,24 @@ package cassandra
 
 import (
 	"testing"
-	"github.com/uber-go/dosa"
 	"time"
-	"golang.org/x/net/context"
-	_ "github.com/uber-go/dosa/connectors/random"
-)
-type AllTypes struct {
-	dosa.Entity     `dosa:"primaryKey=BoolType"`
-	BoolType   bool
-	Int32Type  int32
-	Int64Type  int64
-	DoubleType float64
-	StringType string
-	BlobType   []byte
-	TimeType   time.Time
-	UUIDType   dosa.UUID
-}
 
+	"github.com/uber-go/dosa"
+	_ "github.com/uber-go/dosa/connectors/random"
+	"golang.org/x/net/context"
+)
+
+type AllTypes struct {
+	dosa.Entity `dosa:"primaryKey=BoolType"`
+	BoolType    bool
+	Int32Type   int32
+	Int64Type   int64
+	DoubleType  float64
+	StringType  string
+	BlobType    []byte
+	TimeType    time.Time
+	UUIDType    dosa.UUID
+}
 
 func BenchmarkIntegration(b *testing.B) {
 	reg, err := dosa.NewRegistrar("production", "rkuris", (*AllTypes)(nil))
@@ -54,9 +55,9 @@ func BenchmarkIntegration(b *testing.B) {
 		panic(err)
 	}
 
-	cassandraClient, err := dosa.NewClient(reg, conn)
+	cassandraClient := dosa.NewClient(reg, conn)
 
-	randomClient, err := dosa.NewClient(reg, rconn)
+	randomClient := dosa.NewClient(reg, rconn)
 
 	b.ResetTimer()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)

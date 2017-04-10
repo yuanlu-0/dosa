@@ -22,13 +22,13 @@ package cassandra
 
 import (
 	"testing"
-	"github.com/uber-go/dosa"
+
 	"github.com/gocql/gocql"
 	"github.com/stretchr/testify/assert"
+	"github.com/uber-go/dosa"
 )
 
 func TestCompareStructToSchema(t *testing.T) {
-
 
 }
 
@@ -37,16 +37,15 @@ func TestCompareStructToSchemaWrongPk(t *testing.T) {
 		PartitionKeys: []string{"p1"}},
 		Name: "test",
 		Columns: []*dosa.ColumnDefinition{
-			&dosa.ColumnDefinition{Name: "p1", Type: dosa.String},
-			&dosa.ColumnDefinition{Name: "c1", Type: dosa.String},
+			{Name: "p1", Type: dosa.String},
+			{Name: "c1", Type: dosa.String},
 		},
 	}
 	md := gocql.TableMetadata{PartitionKey: []*gocql.ColumnMetadata{
-		&gocql.ColumnMetadata{Name:"c1", Type: TestType{typ: gocql.TypeVarchar}},
+		{Name: "c1", Type: TestType{typ: gocql.TypeVarchar}},
 	},
 		Columns: map[string]*gocql.ColumnMetadata{
-			"p1": &gocql.ColumnMetadata{Name:"p1", Type: TestType{typ: gocql.TypeVarchar}},
-
+			"p1": {Name: "p1", Type: TestType{typ: gocql.TypeVarchar}},
 		}}
 	missing := RepairableSchemaMismatchError{}
 	err := compareStructToSchema(&ed, &md, &missing)
@@ -54,22 +53,20 @@ func TestCompareStructToSchemaWrongPk(t *testing.T) {
 	assert.Contains(t, err.Error(), `"test"`)
 }
 
-
 func TestCompareStructToSchemaMissingColumn(t *testing.T) {
 	ed := dosa.EntityDefinition{Key: &dosa.PrimaryKey{
 		PartitionKeys: []string{"p1"}},
 		Name: "test",
 		Columns: []*dosa.ColumnDefinition{
-			&dosa.ColumnDefinition{Name: "p1", Type: dosa.String},
-			&dosa.ColumnDefinition{Name: "c1", Type: dosa.String},
+			{Name: "p1", Type: dosa.String},
+			{Name: "c1", Type: dosa.String},
 		},
 	}
 	md := gocql.TableMetadata{PartitionKey: []*gocql.ColumnMetadata{
-		&gocql.ColumnMetadata{Name:"p1", Type: TestType{typ: gocql.TypeVarchar}},
+		{Name: "p1", Type: TestType{typ: gocql.TypeVarchar}},
 	},
 		Columns: map[string]*gocql.ColumnMetadata{
-			"p1": &gocql.ColumnMetadata{Name:"p1", Type: TestType{typ: gocql.TypeVarchar}},
-
+			"p1": {Name: "p1", Type: TestType{typ: gocql.TypeVarchar}},
 		}}
 	missing := RepairableSchemaMismatchError{}
 	err := compareStructToSchema(&ed, &md, &missing)
@@ -79,7 +76,6 @@ func TestCompareStructToSchemaMissingColumn(t *testing.T) {
 	assert.Equal(t, "test", missing.MissingColumns[0].Tablename)
 	assert.Equal(t, "c1", missing.MissingColumns[0].Column.Name)
 }
-
 
 type TestType struct {
 	typ gocql.Type
